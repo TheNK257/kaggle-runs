@@ -1,0 +1,8 @@
+* text=auto
+
+# Shell script must keep LF or it breaks on macOS/Linux; batch file must keep CRLF.
+gradlew text eol=lf
+*.bat text eol=crlf
+
+*.jar binary
+*.png binary

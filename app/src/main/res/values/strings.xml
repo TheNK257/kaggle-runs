@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kaggle Runs</string>
+    <string name="widget_title">Kaggle runs</string>
+    <string name="widget_description">Your running Kaggle notebooks with live run time and status</string>
+    <string name="refresh">Refresh</string>
+
+    <string name="setup_help">Paste a Kaggle API token. Create one at https://www.kaggle.com/settings under API → Create New Token. It starts with KGAT_.</string>
+    <string name="token_hint">KGAT_…</string>
+    <string name="save">Save and test</string>
+    <string name="remove">Remove token</string>
+    <string name="checking">Checking with Kaggle…</string>
+    <string name="token_empty">Paste your token first.</string>
+    <string name="token_saved">A token ending in …%1$s is saved. Paste a new one to replace it.</string>
+    <string name="token_removed">Token removed.</string>
+    <string name="token_rejected">Kaggle rejected this token. Check that you copied all of it, or create a new one.</string>
+    <string name="network_error">Couldn\'t reach Kaggle (%1$s). Check your connection and try again.</string>
+    <plurals name="connected_as">
+        <item quantity="one">✓ Connected as %1$s. Found %2$d notebook. Now add the Kaggle Runs widget to your home screen.</item>
+        <item quantity="other">✓ Connected as %1$s. Found %2$d notebooks. Now add the Kaggle Runs widget to your home screen.</item>
+    </plurals>
+    <string name="status_dot">●</string>
+    <string name="connected_empty">✓ Token works, but you have no notebooks yet.</string>
+    <string name="usage_help">The widget refreshes every 15 minutes. Running times tick live in between. Tap ⟳ to refresh now, tap a notebook to open it, or tap the title to come back here.\n\nOnly committed runs (Save Version) show up. Interactive editor sessions aren\'t visible through the Kaggle API.</string>
+</resources>
