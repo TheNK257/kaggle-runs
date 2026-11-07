@@ -82,9 +82,27 @@ private class Geometry(width: Float, height: Float, density: Density, private va
     private val tMax = points.last().first
     val vMinRaw = points.minOf { it.second }
     val vMaxRaw = points.maxOf { it.second }
-    private val pad = (vMaxRaw - vMinRaw).let { span -> if (span == 0.0) maxOf(abs(vMaxRaw) * 0.01, 1e-3) else span * 0.12 }
-    private val vMin = vMinRaw - pad
-    private val vMax = vMaxRaw + pad
+
+    // A minimum visible range (0.5% of the value) keeps a one-place rank change from filling the whole plot.
+    private val minSpan = maxOf(abs(vMaxRaw) * 0.005, 1e-3)
+    private val span = vMaxRaw - vMinRaw
+    private val extra = if (span < minSpan) (minSpan - span) / 2 else 0.0
+    val vMin = vMinRaw - extra - maxOf(span, minSpan) * 0.12
+    val vMax = vMaxRaw + extra + maxOf(span, minSpan) * 0.12
+
+    /** Round tick values (1/2/5 × 10ⁿ steps) inside the visible range, so labels are clean and evenly spaced. */
+    fun ticks(): List<Double> {
+        val raw = (vMax - vMin) / 3
+        val magnitude = Math.pow(10.0, kotlin.math.floor(kotlin.math.log10(raw)))
+        val step = when (raw / magnitude) {
+            in 0.0..1.5 -> 1.0
+            in 1.5..3.0 -> 2.0
+            in 3.0..7.0 -> 5.0
+            else -> 10.0
+        } * magnitude
+        val first = kotlin.math.ceil(vMin / step) * step
+        return generateSequence(first) { it + step }.takeWhile { it <= vMax + step * 1e-6 }.toList()
+    }
 
     fun x(t: Long): Float = if (tMax == tMin) (left + right) / 2 else left + (t - tMin).toFloat() / (tMax - tMin) * (right - left)
     fun y(v: Double): Float {
@@ -134,9 +152,8 @@ private fun HistoryChart(points: List<Pair<Long, Double>>, invertY: Boolean, for
         val g = Geometry(size.width, size.height, this, points, invertY)
         val hairline = 1.dp.toPx()
 
-        // Recessive solid hairline grid at the extremes and midpoint, labelled on the left.
-        val ticks = listOf(g.vMinRaw, (g.vMinRaw + g.vMaxRaw) / 2, g.vMaxRaw).distinct()
-        for (v in ticks) {
+        // Recessive solid hairline grid at round values, labelled on the left; repeated labels are dropped.
+        for (v in g.ticks().distinctBy { format(it) }) {
             val y = g.y(v)
             drawLine(colors.grid, Offset(g.left, y), Offset(g.right, y), strokeWidth = hairline)
             val text = measurer.measure(format(v), axisStyle)
@@ -168,7 +185,16 @@ private fun HistoryChart(points: List<Pair<Long, Double>>, invertY: Boolean, for
             val text = measurer.measure(format(last.second), labelStyle)
             val ex = (g.x(last.first) - text.size.width).coerceAtLeast(g.left)
             val ey = (g.y(last.second) - text.size.height - 8.dp.toPx()).coerceAtLeast(0f)
+            // Surface-coloured backing so the line never runs through the label.
+            val halo = 3.dp.toPx()
+            drawRoundRect(
+                surface,
+                topLeft = Offset(ex - halo, ey),
+                size = Size(text.size.width + halo * 2, text.size.height.toFloat()),
+                cornerRadius = CornerRadius(4.dp.toPx()),
+            )
             drawText(text, topLeft = Offset(ex, ey))
+            marker(last.first, last.second) // keep the end marker on top of the backing
         } else {
             // Crosshair and tooltip for the touched point.
             val (t, v) = points[sel]
