@@ -10,30 +10,12 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val ctx = applicationContext
-        val token = TokenStore.load(ctx)
-        if (token == null) {
-            WidgetRenderer.updateAll(ctx)
-            return Result.success()
-        }
-        val previous = SnapshotCache.load(ctx)
-        val snapshot = try {
-            Snapshot(KaggleApi(token).fetchRuns(), System.currentTimeMillis(), null)
-        } catch (e: AuthException) {
-            Snapshot(previous?.runs.orEmpty(), previous?.fetchedAt ?: 0L, "Token rejected – tap ⚙ to update")
-        } catch (e: IOException) {
-            Snapshot(previous?.runs.orEmpty(), previous?.fetchedAt ?: 0L, "Can't reach Kaggle")
-        } catch (e: Exception) {
-            Snapshot(previous?.runs.orEmpty(), previous?.fetchedAt ?: 0L, "Unexpected response from Kaggle")
-        }
-        SnapshotCache.save(ctx, snapshot)
-        WidgetRenderer.updateAll(ctx)
+        Refresher.refresh(applicationContext)
         return Result.success()
     }
 
@@ -43,18 +25,24 @@ class RefreshWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
         private val online = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
-        /** Every 15 minutes, the shortest interval Android allows for background work. */
+        /** Uses the interval chosen in settings; 15 minutes is the shortest Android allows. */
         fun schedulePeriodic(context: Context) {
-            val request = PeriodicWorkRequestBuilder<RefreshWorker>(15, TimeUnit.MINUTES)
+            val minutes = Prefs.refreshMinutes(context)
+            val manager = WorkManager.getInstance(context)
+            if (minutes == Prefs.MANUAL) {
+                manager.cancelUniqueWork(PERIODIC)
+                return
+            }
+            val request = PeriodicWorkRequestBuilder<RefreshWorker>(minutes.toLong(), TimeUnit.MINUTES)
                 .setConstraints(online)
                 .build()
-            WorkManager.getInstance(context)
-                .enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.KEEP, request)
+            manager.enqueueUniquePeriodicWork(PERIODIC, ExistingPeriodicWorkPolicy.UPDATE, request)
         }
 
+        /** KEEP: a refresh already in flight will deliver fresh data; don't cancel it. */
         fun refreshNow(context: Context) {
             val request = OneTimeWorkRequestBuilder<RefreshWorker>().setConstraints(online).build()
-            WorkManager.getInstance(context).enqueueUniqueWork(NOW, ExistingWorkPolicy.REPLACE, request)
+            WorkManager.getInstance(context).enqueueUniqueWork(NOW, ExistingWorkPolicy.KEEP, request)
         }
 
         fun cancelAll(context: Context) {

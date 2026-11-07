@@ -1,26 +1,40 @@
 # Kaggle Runs
 
-An Android home-screen widget that shows your Kaggle notebook runs: which ones are **running right now**,
-how long they've been running (a live-ticking timer), and the status of recent runs.
+An Android app with two home-screen widgets for Kaggle: which notebooks are **running right now** and how
+long they took, which run you submitted and what it scored, and where you stand on the leaderboard.
 
 ```
-┌──────────────────────────────────────────────┐
-│ Kaggle runs              Updated 1:42 pm   ⟳ │
-│ ● my-training-run          2:46:28   Running │
-│ ● feature-engineering-v2  12:35 am  Complete │
-│ ● baseline-model      4 Nov, 8:59 pm   Error │
-└──────────────────────────────────────────────┘
+┌─ Kaggle runs ──────────── Updated 5:59 pm ⟳ ┐   ┌─ My Competition ──── Updated 5:59 pm ⟳ ┐
+│ ● my-training-run                   Running  │   │ #1,234  of 4,567   ▲ 85 · 24h           │
+│   2:46:28 · since 10:56 am                   │   │ Best 0.812 · Top 0.905                  │
+│ ● submit-blend-v3                  Complete  │   │ Last: submit-blend-v3 · 0.812           │
+│   4 Nov, 7:49 pm · took 5m 22s     📤 0.812  │   │ 3 of 5 left today · 69 days left        │
+└──────────────────────────────────────────────┘   └─────────────────────────────────────────┘
 ```
 
-- Status for each run: Queued, Running, Complete, Error or Cancelled
-- The running time ticks live, with no polling needed
-- Refreshes every 15 minutes (Android's minimum for background work). Tap ⟳ to refresh now.
-- Tap a notebook to open it on kaggle.com. Tap the title to open settings.
-- Scrollable list that fits any widget size
-- No server or third-party service: the phone talks only to `https://www.kaggle.com/api`
+**Runs widget:** status (Queued / Running / Complete / Error / Cancelled), a live-ticking timer while running,
+how long finished runs took, and a 📤 badge with the score when that notebook was submitted.
 
-> **Limitation:** only committed runs (*Save Version* / *Save & Run All*) are visible. The Kaggle API
-> doesn't expose interactive editor sessions.
+**Competition widget:** your public-leaderboard rank and its change over 24 h, best and top score, your latest
+submission, submissions left today and time to the deadline. Long-press it to choose which competition it follows.
+
+**The app** (for those who'd rather not have a widget):
+- **Runs:** every recent run with its start time, duration, failure message and submission.
+- **Competitions:** rank, scores, rank and best-score history graphs (tap for values, or switch to a table), and every
+  submission with the notebook it came from.
+- **Settings:** API token, refresh frequency (15 min, 30 min, 1 h, 3 h or manual), notifications.
+
+**Notifications** when a run finishes, fails or is cancelled ("✅ my-training-run finished · Took 6h 01m"), and
+when a submission is scored ("📤 submit-blend-v3 scored 0.821 · rank #1,234 → #1,150").
+
+No server or third-party service: the phone talks only to `https://www.kaggle.com/api`.
+
+> **Limitations**
+> - Only committed runs (*Save Version* / *Save & Run All*) are visible. The Kaggle API doesn't expose
+>   interactive editor sessions.
+> - Background checks can't run more often than every 15 minutes (an Android rule), so notifications arrive
+>   within your refresh interval. The live timer and pull-to-refresh don't depend on it.
+> - Kaggle only reports your *current* rank, so the history graphs build up from the day you install the app.
 
 ## Install
 
@@ -28,7 +42,8 @@ how long they've been running (a live-ticking timer), and the status of recent r
    your phone. Allow "Install unknown apps" for your browser or file manager when asked.
 2. Create a Kaggle API token: kaggle.com → **Settings → API → Create New Token** (starts with `KGAT_`).
 3. Open **Kaggle Runs**, paste the token, tap **Save and test**.
-4. Long-press the home screen → **Widgets** → **Kaggle Runs**.
+4. Long-press the home screen → **Widgets** → **Kaggle Runs**, then add **Kaggle runs**, **Kaggle competition**
+   or both.
 
 ## Security
 
@@ -64,11 +79,25 @@ Install over USB: `adb install -r app/build/outputs/apk/release/app-release.apk`
 
 ## How it works
 
+All requests use Bearer auth against `https://www.kaggle.com/api/v1/`:
+
+| Endpoint | Used for |
+|---|---|
+| `kernels/list?group=profile&sortBy=dateRun` | Your notebooks and when each last ran |
+| `kernels/status` | Run status for the 8 most recent |
+| `kernels/output` | How long a finished run took: the run log stamps every line with seconds since the start. Fetched once per run, then cached. |
+| `competitions/list?group=entered` | Active competitions you've entered, with your rank, team count, deadline and daily limit |
+| `competitions/submissions/list/{competition}` | Your submissions. Each one's `url` names the notebook and version it came from. |
+| `competitions/{competition}/leaderboard/view` | Top score, and whether higher or lower scores are better |
+
 | File | Role |
 |---|---|
-| `KaggleApi.kt` | `GET /api/v1/kernels/list?group=profile&sortBy=dateRun` for your notebooks and run start times, then `GET /api/v1/kernels/status` for the 8 most recent, in parallel. Bearer auth. |
-| `RefreshWorker.kt` | WorkManager job: fetches, caches the snapshot, redraws the widget. Periodic (15 min) plus on demand. |
-| `KaggleWidgetProvider.kt` | Widget rendering with `RemoteViews`. A `Chronometer` handles live run time; the list uses `RemoteCollectionItems`. |
+| `KaggleApi.kt` | The REST client above. |
+| `Refresher.kt` | One refresh shared by the background worker, widget ⟳ and pull-to-refresh: fetch, record history, notify, cache, redraw. |
+| `RefreshWorker.kt` | WorkManager scheduling at the interval chosen in Settings. |
+| `Notifier.kt` | Compares the new snapshot with the previous one to detect finished runs and newly scored submissions. |
+| `Stores.kt` | Snapshot cache, run-duration cache, per-competition history files, settings. |
+| `KaggleWidgetProvider.kt`, `CompetitionWidget.kt` | The two widgets (`RemoteViews`; a `Chronometer` for the live timer). |
+| `MainActivity.kt`, `*Screen.kt`, `Chart.kt` | The Jetpack Compose app. |
 | `TokenStore.kt` | Encrypts the token with an Android Keystore AES-GCM key. |
-| `SettingsActivity.kt` | Token entry and verification. |
 | `OpenNotebookActivity.kt` | Invisible step that opens a tapped notebook (Android 14+ forbids mutable implicit PendingIntents). |
